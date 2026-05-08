@@ -163,80 +163,60 @@ def create_jap_order(link, service, qty_min, qty_max, page_name):
 # ══════════════════════════════════════
 def fetch_reels(page_url, page_name, all_posts=False):
     """Парсим страницу через curl_cffi
-    all_posts=True — ищем все типы постов (с нескольких URL)
-    all_posts=False — только Reels с одной страницы
+    all_posts=True — ищем все типы постов на главной странице
+    all_posts=False — только Reels
     """
     try:
+        log(f"🔄 [{page_name}] GET {page_url}")
+        
+        resp = curl_requests.get(
+            page_url,
+            headers=HEADERS,
+            impersonate="chrome120",
+            timeout=30,
+            allow_redirects=True
+        )
+        log(f"📥 [{page_name}] Status: {resp.status_code} | HTML: {len(resp.text)} символов")
+        
+        if resp.status_code != 200:
+            log(f"⚠️  [{page_name}] {resp.text[:200]}")
+            return []
+        
+        html = resp.text
+        html_clean = html.replace("\\\\/", "/").replace("\\/", "/")
+        
         urls = set()
         
         if all_posts:
-            # Парсим несколько URL чтобы собрать все типы контента
-            urls_to_fetch = [
-                f"https://www.facebook.com/{page_name}",
-                f"https://www.facebook.com/{page_name}/videos",
-                f"https://www.facebook.com/{page_name}/reels",
-                f"https://www.facebook.com/{page_name}/posts",
-            ]
-        else:
-            urls_to_fetch = [page_url]
-        
-        for url in urls_to_fetch:
-            log(f"🔄 [{page_name}] GET {url}")
+            # Все типы постов на главной странице
+            for match in re.finditer(r'/posts/(pfbid[A-Za-z0-9]{20,}|\d{10,})', html_clean):
+                urls.add(f"https://www.facebook.com/{page_name}/posts/{match.group(1)}")
             
-            try:
-                resp = curl_requests.get(
-                    url,
-                    headers=HEADERS,
-                    impersonate="chrome120",
-                    timeout=30,
-                    allow_redirects=True
-                )
-                log(f"📥 [{page_name}] Status: {resp.status_code} | HTML: {len(resp.text)} символов")
-                
-                if resp.status_code != 200:
-                    continue
-                
-                html = resp.text
-                html_clean = html.replace("\\\\/", "/").replace("\\/", "/")
-                
-                if all_posts:
-                    # Все типы постов
-                    for match in re.finditer(r'/posts/(pfbid[A-Za-z0-9]{20,}|\d{10,})', html_clean):
-                        post_id = match.group(1)
-                        urls.add(f"https://www.facebook.com/{page_name}/posts/{post_id}")
-                    
-                    for match in re.finditer(r'/videos/(\d{10,})', html_clean):
-                        video_id = match.group(1)
-                        urls.add(f"https://www.facebook.com/{page_name}/videos/{video_id}")
-                    
-                    for match in re.finditer(r'/reel/(\d{10,})', html_clean):
-                        urls.add(f"https://www.facebook.com/reel/{match.group(1)}")
-                    
-                    for match in re.finditer(r'story_fbid=(\d{10,})', html_clean):
-                        urls.add(f"https://www.facebook.com/{page_name}/posts/{match.group(1)}")
-                    
-                    for match in re.finditer(r'/photo/\?fbid=(\d{10,})', html_clean):
-                        urls.add(f"https://www.facebook.com/photo/?fbid={match.group(1)}")
-                else:
-                    # Только Reels
-                    patterns = [
-                        r'/reel/(\d{10,})',
-                        r'"video_id":"(\d{10,})"',
-                        r'/videos/(\d{10,})',
-                        r'watch/\?v=(\d{10,})',
-                    ]
-                    for pattern in patterns:
-                        for match in re.finditer(pattern, html_clean):
-                            urls.add(f"https://www.facebook.com/reel/{match.group(1)}")
-                
-                time.sleep(2)  # пауза между запросами
-            except Exception as e:
-                log(f"⚠️  [{page_name}] {url}: {e}")
-                continue
-        
-        if all_posts:
-            log(f"📊 [{page_name}] Найдено постов всех типов: {len(urls)}")
+            for match in re.finditer(r'/videos/(\d{10,})', html_clean):
+                urls.add(f"https://www.facebook.com/{page_name}/videos/{match.group(1)}")
+            
+            for match in re.finditer(r'/reel/(\d{10,})', html_clean):
+                urls.add(f"https://www.facebook.com/reel/{match.group(1)}")
+            
+            for match in re.finditer(r'story_fbid=(\d{10,})', html_clean):
+                urls.add(f"https://www.facebook.com/{page_name}/posts/{match.group(1)}")
+            
+            for match in re.finditer(r'/photo/\?fbid=(\d{10,})', html_clean):
+                urls.add(f"https://www.facebook.com/photo/?fbid={match.group(1)}")
+            
+            log(f"📊 [{page_name}] Найдено постов: {len(urls)}")
         else:
+            # Только Reels
+            patterns = [
+                r'/reel/(\d{10,})',
+                r'"video_id":"(\d{10,})"',
+                r'/videos/(\d{10,})',
+                r'watch/\?v=(\d{10,})',
+            ]
+            for pattern in patterns:
+                for match in re.finditer(pattern, html_clean):
+                    urls.add(f"https://www.facebook.com/reel/{match.group(1)}")
+            
             log(f"🎬 [{page_name}] Найдено Reels: {len(urls)}")
         
         return list(urls)
