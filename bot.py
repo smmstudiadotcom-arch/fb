@@ -28,14 +28,16 @@ FB_PAGES = [
         "service":  9604,
         "qty_min":  500,
         "qty_max":  1000,
+        "all_posts": False,  # только Reels
     },
     {
         "name":     "kinshik",
         "page_id":  "kinshik",
-        "url":      "https://www.facebook.com/kinshik/reels",
+        "url":      "https://www.facebook.com/kinshik",
         "service":  7654,
         "qty_min":  30,
         "qty_max":  55,
+        "all_posts": True,  # парсить все типы постов
     },
 ]
 
@@ -159,8 +161,11 @@ def create_jap_order(link, service, qty_min, qty_max, page_name):
 # ══════════════════════════════════════
 #  FACEBOOK SCRAPING
 # ══════════════════════════════════════
-def fetch_reels(page_url, page_name):
-    """Парсим страницу Reels через curl_cffi"""
+def fetch_reels(page_url, page_name, all_posts=False):
+    """Парсим страницу через curl_cffi
+    all_posts=True — ищем все типы постов
+    all_posts=False — только Reels
+    """
     try:
         log(f"🔄 [{page_name}] GET {page_url}")
         
@@ -181,18 +186,47 @@ def fetch_reels(page_url, page_name):
         html_clean = html.replace("\\\\/", "/").replace("\\/", "/")
         
         urls = set()
-        patterns = [
-            r'/reel/(\d{10,})',
-            r'"video_id":"(\d{10,})"',
-            r'/videos/(\d{10,})',
-            r'watch/\?v=(\d{10,})',
-        ]
         
-        for pattern in patterns:
-            for match in re.finditer(pattern, html_clean):
+        if all_posts:
+            # Все типы постов: посты, видео, рилзы, фото
+            # Паттерн 1: /USERNAME/posts/POSTID или /posts/pfbid...
+            for match in re.finditer(r'/posts/(pfbid[A-Za-z0-9]{20,}|\d{10,})', html_clean):
+                post_id = match.group(1)
+                urls.add(f"https://www.facebook.com/{page_name}/posts/{post_id}")
+            
+            # Паттерн 2: /USERNAME/videos/VIDEOID
+            for match in re.finditer(r'/videos/(\d{10,})', html_clean):
+                video_id = match.group(1)
+                urls.add(f"https://www.facebook.com/{page_name}/videos/{video_id}")
+            
+            # Паттерн 3: /reel/REELID
+            for match in re.finditer(r'/reel/(\d{10,})', html_clean):
                 urls.add(f"https://www.facebook.com/reel/{match.group(1)}")
+            
+            # Паттерн 4: story_fbid (старый формат постов)
+            for match in re.finditer(r'story_fbid=(\d{10,})', html_clean):
+                urls.add(f"https://www.facebook.com/{page_name}/posts/{match.group(1)}")
+            
+            # Паттерн 5: /photo/?fbid=...
+            for match in re.finditer(r'/photo/\?fbid=(\d{10,})', html_clean):
+                urls.add(f"https://www.facebook.com/photo/?fbid={match.group(1)}")
+            
+            log(f"📊 [{page_name}] Найдено постов всех типов: {len(urls)}")
+        else:
+            # Только Reels
+            patterns = [
+                r'/reel/(\d{10,})',
+                r'"video_id":"(\d{10,})"',
+                r'/videos/(\d{10,})',
+                r'watch/\?v=(\d{10,})',
+            ]
+            
+            for pattern in patterns:
+                for match in re.finditer(pattern, html_clean):
+                    urls.add(f"https://www.facebook.com/reel/{match.group(1)}")
+            
+            log(f"🎬 [{page_name}] Найдено Reels: {len(urls)}")
         
-        log(f"🎬 [{page_name}] Найдено Reels: {len(urls)}")
         return list(urls)
     
     except Exception as e:
@@ -212,7 +246,7 @@ def process_page(page, processed, daily):
         log(f"⏸  [{name}] Дневной лимит достигнут ({today_count}/{DAILY_LIMIT})")
         return
     
-    reels = fetch_reels(page["url"], name)
+    reels = fetch_reels(page["url"], name, page.get("all_posts", False))
     if not reels:
         return
     
