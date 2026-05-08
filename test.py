@@ -55,30 +55,58 @@ def test_curl_cffi():
     try:
         from curl_cffi import requests as curl_requests
         
-        headers = {
+        # Десктоп User-Agent
+        headers_desktop = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Cookie": COOKIES_STR,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+            "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"macOS"',
+            "Upgrade-Insecure-Requests": "1",
+        }
+        
+        # Мобильный User-Agent
+        headers_mobile = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+            "Cookie": COOKIES_STR,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "ru-RU,ru;q=0.9",
         }
         
         urls_to_try = [
-            f"https://www.facebook.com/{FB_PAGE_ID}/reels",
-            f"https://m.facebook.com/{FB_PAGE_ID}/reels",
-            f"https://m.facebook.com/profile.php?id={FB_PAGE_ID}&sk=reels",
+            (f"https://www.facebook.com/profile.php?id={FB_PAGE_ID}&sk=reels_tab", headers_desktop, "chrome120"),
+            (f"https://www.facebook.com/profile.php?id={FB_PAGE_ID}", headers_desktop, "chrome120"),
+            (f"https://m.facebook.com/profile.php?id={FB_PAGE_ID}&sk=reels", headers_mobile, "safari17_0"),
+            (f"https://m.facebook.com/profile.php?id={FB_PAGE_ID}", headers_mobile, "safari17_0"),
         ]
         
-        for url in urls_to_try:
-            log(f"📡 GET {url}")
+        for url, headers, impersonate in urls_to_try:
+            log(f"📡 [{impersonate}] GET {url[:80]}")
             try:
-                resp = curl_requests.get(url, headers=headers, impersonate="chrome120", timeout=20)
-                log(f"   Status: {resp.status_code} | HTML: {len(resp.text)} символов")
+                resp = curl_requests.get(url, headers=headers, impersonate=impersonate, timeout=30, allow_redirects=True)
+                log(f"   Status: {resp.status_code} | HTML: {len(resp.text)} символов | URL: {resp.url[:80]}")
+                
+                # Дебаг: контексты слова reel
+                reel_count = len(re.findall(r'reel', resp.text, re.IGNORECASE))
+                video_count = len(re.findall(r'video_id|/video/|/videos/', resp.text, re.IGNORECASE))
+                log(f"   🔍 Слово 'reel' в HTML: {reel_count}, 'video': {video_count}")
                 
                 reels = find_reels(resp.text)
                 log(f"   🎬 Найдено Reels: {len(reels)}")
                 if reels:
-                    for r in reels[:3]:
+                    for r in reels[:5]:
                         log(f"      → {r}")
                     return True
+                
+                # Если контент большой, ищем подсказки
+                if len(resp.text) > 50000 and reel_count > 0:
+                    # Логируем контекст вокруг слова reel
+                    for m in re.finditer(r'reel', resp.text, re.IGNORECASE):
+                        ctx = resp.text[max(0, m.start()-30):m.start()+100]
+                        log(f"   📝 Контекст: ...{ctx}...")
+                        break
             except Exception as e:
                 log(f"   ❌ {e}")
         
