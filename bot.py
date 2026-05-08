@@ -188,21 +188,9 @@ def fetch_reels(page_url, page_name, all_posts=False):
         urls = set()
         
         if all_posts:
-            # Все типы постов на главной странице
+            # Только /posts/pfbid... — универсальный формат, без дублей
             for match in re.finditer(r'/posts/(pfbid[A-Za-z0-9]{20,}|\d{10,})', html_clean):
                 urls.add(f"https://www.facebook.com/{page_name}/posts/{match.group(1)}")
-            
-            for match in re.finditer(r'/videos/(\d{10,})', html_clean):
-                urls.add(f"https://www.facebook.com/{page_name}/videos/{match.group(1)}")
-            
-            for match in re.finditer(r'/reel/(\d{10,})', html_clean):
-                urls.add(f"https://www.facebook.com/reel/{match.group(1)}")
-            
-            for match in re.finditer(r'story_fbid=(\d{10,})', html_clean):
-                urls.add(f"https://www.facebook.com/{page_name}/posts/{match.group(1)}")
-            
-            for match in re.finditer(r'/photo/\?fbid=(\d{10,})', html_clean):
-                urls.add(f"https://www.facebook.com/photo/?fbid={match.group(1)}")
             
             log(f"📊 [{page_name}] Найдено постов: {len(urls)}")
         else:
